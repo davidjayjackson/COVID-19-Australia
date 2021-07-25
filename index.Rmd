@@ -1,0 +1,144 @@
+---
+title: 'Australia: Battle With COVID-19'
+author: "David Jackson"
+date: "`r Sys.time()`"
+output: 
+  html_document:
+    fig_width: 9
+    fig_height: 5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,error=FALSE,message=FALSE)
+library(ggplot2)
+library(scales)
+library(RSQLite)
+library(plotly)
+library(forecast)
+theme_set(theme_linedraw())
+```
+
+## Australia's Battle with COVID-19
+
+```{r}
+rm(list=ls())
+source("../DATA/movavg.R")
+
+db <- dbConnect(SQLite(), dbname="../COVID-19-DB/OURWORLD.sqlite3")
+df <- dbGetQuery(db,"select * from OWID")
+df <- df %>% filter(location =="Australia" )
+# df <- subset(df,location =="Australia" )
+df$date <- as.Date(df$date)
+sum(df$new_cases,na.rm = TRUE)
+df$new_deaths <- as.numeric(df$new_deaths)
+sum(df$new_deaths,na.rm=TRUE)
+
+```
+
+
+```{r}
+
+df <- df[order(df$date,decreasing = TRUE),]
+df$MAC <- ma(df$new_cases,14,centre=TRUE)
+df$MAD <- ma(df$new_deaths,14,centre=TRUE)
+
+```
+
+
+### Plot of Daily Cases and Deaths
+
+```{r}
+daily_cases <-ggplot(df) + 
+  labs(title="COVID-19 new_cases by Date",y="Cases") +
+    geom_line(aes(x=date,y=MAC,col="Mov Average"),lwd=1) +
+   geom_line(aes(x=date,y=new_cases,col="Daily Cases")) +
+  # geom_point(aes(x=date,y=new_cases)) +
+  scale_y_continuous(labels = comma)
+ggplotly(daily_cases)
+
+```
+```{r}
+daily_new_deaths <-ggplot(df) + 
+  labs(title="COVID-19 Deaths by Date",col="Deaths",y="Deaths")  +
+  geom_line(aes(x=date,y=MAD,col="Mov. Average"),lwd=1) +
+   geom_line(aes(x=date,y=new_deaths,col="Daily Deaths")) 
+   ggplotly(daily_new_deaths)
+
+```
+
+#### Non-Moving Average By Week and By Month
+
+```{r}
+df$Monthly <- as.Date(cut(df$date,
+  breaks = "month"))
+df$Weekly <- as.Date(cut(df$date,
+  breaks = "week",
+  start.on.monday = FALSE))
+
+```
+```{r}
+Weekly_new_cases <- aggregate(new_cases~Weekly,df,FUN=sum)
+Weekly_new_deaths <- aggregate(new_deaths~Weekly,df,FUN=sum)
+Weekly_new_cases$DRate <- Weekly_new_deaths$new_deaths/Weekly_new_cases$new_cases
+Weekly_new_cases$LivedSaved <- Weekly_new_cases$new_cases * (max(Weekly_new_cases$DRate) - Weekly_new_cases$DRate) 
+
+```
+```{r}
+ggplot(Weekly_new_cases) + geom_col(aes(x=Weekly,y=new_cases)) + 
+  labs(title="Weekly new_cases",x="Date date", y="Weekly Cases") +
+   scale_alpha_date()
+
+ggplot(Weekly_new_deaths) + geom_col(aes(x=Weekly,y=new_deaths)) + 
+  labs(title="Weekly new_deaths",x="Date date", y="Weekly Deaths") 
+  
+``` 
+
+
+#### Monthly new_cases and new_deaths
+
+```{r}
+
+Monthly_new_cases <- aggregate(new_cases~Monthly,df,FUN=sum)
+Monthly_new_deaths <- aggregate(new_deaths~Monthly,df,FUN=sum)
+Monthly_new_cases$DRate <- Monthly_new_deaths$new_deaths/Monthly_new_cases$new_cases
+Monthly_new_cases$LivedSaved <- Monthly_new_cases$new_cases * (max(Monthly_new_cases$DRate) - Monthly_new_cases$DRate) * 100
+```
+```{r}
+ggplot(Monthly_new_cases) + geom_col(aes(x=Monthly,y=new_cases)) +
+  labs(title="Monthly new_cases") +
+  scale_y_continuous(labels=scales::comma) +
+   scale_alpha_date()
+
+ggplot(Monthly_new_deaths) + geom_col(aes(x=Monthly,y=new_deaths)) +
+  labs(title="Monthly new_deaths") +
+   scale_alpha_date()
+```
+
+#### Cases and Deaths Per 100,000
+
+```{r}
+df$PC <- (df$new_cases/331002651)*100000
+ggplot(df) + geom_line(aes(x=date,y=PC)) +
+  scale_y_continuous(labels = comma) +
+  geom_smooth(aes(x=date,y=PC),span=0.1) +
+  labs(title="df Case Per 100,000")
+```
+```{r}
+df$DPC <- (df$new_deaths/331002651) *100000
+ggplot(df) + geom_line(aes(x=date,y=DPC)) +
+  scale_y_continuous(labels = comma) +
+  geom_smooth(aes(x=date,y=DPC),span=0.1) +
+  labs(title="df Deaths Per 100,000") + theme_light()
+```
+
+### Total Cases and Total Deaths
+
+```{r}
+ggplot(df) + geom_line(aes(x=date,y=total_cases,col='Toal Cases'),lwd=2) +
+  labs(title = "Total Cases to Date")
+
+ggplot(df) + geom_area(aes(x=date,y=total_deaths,fill='Toal Deaths'),lwd=2) +
+  labs(title = "Total Deaths to Date")
+```
+
+
